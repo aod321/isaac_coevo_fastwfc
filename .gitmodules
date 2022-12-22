@@ -1,0 +1,3 @@
+[submodule "xland_fastwfc"]
+	path = xland_fastwfc
+	url = https://github.com/aod321/xland_fastwfc
