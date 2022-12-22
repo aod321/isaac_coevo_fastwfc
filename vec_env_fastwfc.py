@@ -652,7 +652,6 @@ class PCGVecEnv(StableBaselinesVecEnvAdapter):
         # recover seeds and height_maps
         self.seeds = copy.deepcopy(self.seeds_backup)
         for i in range(self.num_matrix_envs):
-            self.__resetActors(i)
             self.set_landscape(i, self.seeds[i], update_collection = False)
         # recover internal states
         self.facings = copy.deepcopy(self.facings_backup)
