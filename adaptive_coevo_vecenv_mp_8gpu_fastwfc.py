@@ -75,6 +75,8 @@ def train_model_on_collection(
     m_env.reset()
 
     # 5. larva evaluation
+    print("start larva evaluation on device : ", graphics_device_id)
+    print(f"evaluating {decendent_id}")
     larva_eval = m_env.evaluate_sb3(model = model, num_episodes = 300)
     print("larva evaluation : ", larva_eval, " on device : ", graphics_device_id)
 
@@ -83,6 +85,8 @@ def train_model_on_collection(
     model.learn(total_timesteps=timesteps)
     print("training finished on device : ", graphics_device_id)
 
+    print("start adult evaluation on device : ", graphics_device_id)
+    print(f"evaluating {decendent_id}")
     # 7. adult evaluation
     adult_eval = m_env.evaluate_sb3(model = model, num_episodes = 300)
     print("adult evaluation : ", adult_eval, " on device : ", graphics_device_id)
@@ -146,6 +150,7 @@ def generate_boost_model(return_queue = None):
     # else:
     model = PPO('CnnPolicy', env=m_env, batch_size = 1024, device = 'cuda:0')
     # evaluate larva
+    print("generate_boost: Evaluating larva model")
     larva_eval = m_env.evaluate_sb3(model = model, num_episodes = 300)
     print("Larva eval: ", larva_eval)
 
@@ -243,13 +248,14 @@ if __name__ == "__main__":
                 while in_collection(seed = Wave(new_decendent), seeds_collection = seeds_collection):
                     new_decendent, _ = wfcworker_.mutate(base_wave=wfcworker_.wave_from_id(base_wave), new_weight=162, iter_count=1, out_img=False)
                     new_decendent = Wave(new_decendent)
+                new_decendent = Wave(new_decendent)
                 # new seed is generated
                 seeds_collection_duplicate = copy.deepcopy(seeds_collection)
                 seeds_collection_duplicate.append(new_decendent)
                 seeds_collection_duplicates.append(seeds_collection_duplicate)
                 # update decendents database
                 map_decendents.append(copy.deepcopy(new_decendent))
-                print("new decendent generated : ", new_decendent.wave_collapsed)
+                print("new decendent generated : ", new_decendent.seed)
 
             # 3. train model-collection pairs on remote processes
 

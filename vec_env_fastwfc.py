@@ -18,7 +18,7 @@ import gym
 from gym import spaces
 import copy
 from stable_baselines3.common.vec_env import VecEnvWrapper
-
+from tqdm.rich import tqdm
 import os
 
 from draw import *
@@ -1207,14 +1207,20 @@ class PCGVecEnv(StableBaselinesVecEnvAdapter):
             observation_ = self.reset()
 
             # 2. evaluate model until num_episodes of done signals are collected
+            pbar = tqdm(total = num_episodes)
+            last = 0
+            print(f"{si}/ {min(len(self.seeds_collection), 13)}")
             while len(self.reward_fifo) < num_episodes:
+                if len(self.reward_fifo) > last:
+                    last = len(self.reward_fifo)
+                    pbar.update(1)
                 action_, _ = model.predict(observation_, deterministic=False)
                 observation_, _, _, _ = self.step(action_)
 
                 if render:
                     # update the viewer
                     self.gym.draw_viewer(self.viewer, self.sim, True)
-
+            pbar.close()
             # 3. compute mean reward of reward_fifo
             reward_sum = 0
             for i in range(len(self.reward_fifo)):
