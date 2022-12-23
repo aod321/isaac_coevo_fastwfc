@@ -21,7 +21,8 @@ import copy
 from utils import tileid_to_json
 from vec_env_fastwfc import PCGVecEnv, Wave
 import json
-
+from datetime import datetime
+from WFCUnity3DEnv_fastwfc import WFCUnity3DEnv
 from stable_baselines3 import PPO
 from stable_baselines3.common.callbacks import BaseCallback
 from stable_baselines3.common.results_plotter import load_results, ts2xy
@@ -397,15 +398,22 @@ if __name__ == "__main__":
                 # 6.2. update model
                 best_param = copy.copy(model_params[winner_id])
                 # 6.3. save map_decendents
+                json_save_path = "generated_maps/jsons/"
+                time_tmp = time.strftime("%Y-%m-%d-%H-%M-%S", time.localtime())
+                json_save_path = os.path.join(json_save_path, time_tmp)
+                os.makedirs(json_save_path, exist_ok=True)
+                # tag winner id via a empty folder
+                os.makedirs(f"generated_maps/gen_{g}_winner_{winner_id}", exist_ok=True)
                 for m in range(len(map_decendents)):
                     file_name = "gen_"+ str(g) + "_dec_" + str(m) + ".json"
+                    file_name = os.path.join(json_save_path, file_name)
                     tileid_to_json(map_decendents[m].wave, save_path=file_name)
                 # 6.4. save best model
                 print("saving best model")
                 save_model(best_param, g)
                 
                 # 6.5. save performance_records
-                with open("performance_records_gen_" + str(g) + ".json", "w") as f:
+                with open(os.path.join(json_save_path, "performance_records_gen_" + str(g) + ".json"), "w") as f:
                     json.dump(performance_records, f)
             else:
                 print("Quality Control failed, incresing training timesteps")
