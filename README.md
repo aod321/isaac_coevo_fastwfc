@@ -50,6 +50,10 @@ python wfc_env_train_vecenv_empty_fastwfc.py
 
 ## Vectorized Environment Co-evolution Training 
 ```
+## without unity3d map render
 python adaptive_coevo_vecenv_mp_8gpu_fastwfc.py
+
+## with unity3d map render
+python adaptive_coevo_vecenv_mp_8gpu_fastwfc_outimg.py
 ```
 
