@@ -120,7 +120,7 @@ class PCGVecEnv(StableBaselinesVecEnvAdapter):
     reward_range = (-float("inf"), float("inf"))
     spec = None
 
-    def __init__(self, num_envs=16, observation_space=None, action_space=None, headless_: bool = True, render_indicator: bool = True,
+    def __init__(self, wfc_size=9, num_envs=16, observation_space=None, action_space=None, headless_: bool = True, render_indicator: bool = True,
                 compute_device_id = 0, graphics_device_id = 0,prefab_size=2, prefab_height=2, height_scale=0.7):
         # Define action and observation space
         if observation_space is None:
@@ -134,6 +134,7 @@ class PCGVecEnv(StableBaselinesVecEnvAdapter):
         self.observation_space = observation_space
         self.action_space = action_space
         # torch.manual_seed(3407)
+        self.wfc_size = wfc_size
         self.prefab_size = prefab_size
         self.height_scale = height_scale
         self.prefab_height = prefab_height * height_scale
@@ -334,9 +335,9 @@ class PCGVecEnv(StableBaselinesVecEnvAdapter):
         self.initial_pos.r = gymapi.Quat(0,0,0,1)
 
         self.actor_scales = []
-        self.cube_capacity_per_level = 9*9
-        self.corner_capacity_per_level = 9*3        # to be tested
-        self.ramp_capacity_per_level = 9*3
+        self.cube_capacity_per_level = self.wfc_size * self.wfc_size
+        self.corner_capacity_per_level = self.wfc_size *3        # to be tested
+        self.ramp_capacity_per_level = self.wfc_size*3
 
         self.vanish_scale = 0.000001
 
@@ -426,7 +427,7 @@ class PCGVecEnv(StableBaselinesVecEnvAdapter):
         self.__moveActor(env_id, self.food_handles[env_id], food_cell_pose)
         
     def get_space_from_wave(self):
-        return list(np.arange(81).astype(np.int32))
+        return list(np.arange(self.wfc_size * self.wfc_size).astype(np.int32))
 
     def __instanteAsset(self, env_id, asset, pos, name, colli_group, colli_filter):
         return self.gym.create_actor(self.envs[env_id], asset, pos, name, colli_group, colli_filter)
@@ -747,12 +748,12 @@ class PCGVecEnv(StableBaselinesVecEnvAdapter):
         # create actors based on WFC seed
         cell_index = 0
         self.grid_tile_blocks[env_id] = {}
-        for i in range(0,9):
-            for j in range(0,9):
+        for i in range(self.wfc_size):
+            for j in range(self.wfc_size):
                 # cell_index = i*9+j
                 self.grid_tile_blocks[env_id][cell_index] = []
-                tile_ = seed[i*9+j][0][0]
-                rot = seed[i*9+j][0][1]
+                tile_ = seed[i*self.wfc_size+j][0][0]
+                rot = seed[i*self.wfc_size+j][0][1]
                 pose_ij = self.__getPos(i, j)
                 # 1 - 6 stacked cubes
                 if 0<tile_<= 6:
@@ -984,19 +985,19 @@ class PCGVecEnv(StableBaselinesVecEnvAdapter):
             
             body_states_actor = self.gym.get_actor_rigid_body_states(self.envs[i], self.actor_handles[i], gymapi.STATE_ALL)
             actor_p = body_states_actor['pose']['p']
-            actor_cnnc_x = ((actor_p[0][0]+1)/(9*2))*20*9
-            actor_cnnc_y = ((actor_p[0][1]+1)/(9*2))*20*9
+            actor_cnnc_x = ((actor_p[0][0]+1)/(self.wfc_size*2))*20*self.wfc_size
+            actor_cnnc_y = ((actor_p[0][1]+1)/(self.wfc_size*2))*20*self.wfc_size
 
             body_states_food = self.gym.get_actor_rigid_body_states(self.envs[i], self.food_handles[i], gymapi.STATE_ALL)
             food_p = body_states_food['pose']['p']
-            food_cnnc_x = ((food_p[0][0]+1)/(9*2))*20*9
-            food_cnnc_y = ((food_p[0][1]+1)/(9*2))*20*9
+            food_cnnc_x = ((food_p[0][0]+1)/(self.wfc_size*2))*20*self.wfc_size
+            food_cnnc_y = ((food_p[0][1]+1)/(self.wfc_size*2))*20*self.wfc_size
 
-            if not (actor_cnnc_x >= 0 and actor_cnnc_x < 20*9 and actor_cnnc_y >= 0 and actor_cnnc_y < 20*9):
+            if not (actor_cnnc_x >= 0 and actor_cnnc_x < 20*self.wfc_size and actor_cnnc_y >= 0 and actor_cnnc_y < 20*self.wfc_size):
                 self.all_dones[i] = True
                 continue
             
-            if not (food_cnnc_x >= 0 and food_cnnc_x < 20*9 and food_cnnc_y >= 0 and food_cnnc_y < 20*9):
+            if not (food_cnnc_x >= 0 and food_cnnc_x < 20*self.wfc_size and food_cnnc_y >= 0 and food_cnnc_y < 20*self.wfc_size):
                 self.all_dones[i] = True
                 continue
 

@@ -182,6 +182,7 @@ if __name__ == "__main__":
 
     LOGDIR = "./training_logs"
     timesteps = 1500000
+    time_tmp = time.strftime("%Y-%m-%d-%H-%M-%S", time.localtime())
 
     # load flat landscape
     wfcworker_ = fastwfc.XLandWFC("samples.xml")
@@ -398,17 +399,15 @@ if __name__ == "__main__":
                 # 6.2. update model
                 best_param = copy.copy(model_params[winner_id])
                 # 6.3. save map_decendents
-                img_save_path = "generated_maps/imgs/"
-                json_save_path = "generated_maps/jsons/"
-                time_tmp = time.strftime("%Y-%m-%d-%H-%M-%S", time.localtime())
-                json_save_path = os.path.join(json_save_path, time_tmp)
-                img_save_path = os.path.join(img_save_path,time_tmp)
+                save_path = os.path.join("generated_maps", f"{time_tmp}")
+                img_save_path = os.path.join(save_path, "imgs")
+                json_save_path = os.path.join(save_path, "jsons")
                 os.makedirs(json_save_path, exist_ok=True)
                 os.makedirs(img_save_path, exist_ok=True)
                 # tag winner id via a empty folder
-                os.makedirs(f"generated_maps/gen_{g}_winner_{winner_id}", exist_ok=True)
+                os.makedirs(os.path.join(save_path, f"gen_{g}_winner_{winner_id}"), exist_ok=True)
                 # save 3D map image 
-                unity_path = "/home/jiagpu8/workspace/wfc_unity2/1202_build_linux_fastwfc_map/1202_build_linux_fastwfc_map.x86_64"
+                unity_path = "./1228_build_linux_fastwfc_map/1228_build_linux_fastwfc_map.x86_64"
                 try:
                     unity3d_env = WFCUnity3DEnv(file_name=unity_path)
                     for m in range(len(map_decendents)):

@@ -182,6 +182,7 @@ if __name__ == "__main__":
 
     LOGDIR = "./training_logs"
     timesteps = 1500000
+    time_tmp = time.strftime("%Y-%m-%d-%H-%M-%S", time.localtime())
 
     # load flat landscape
     wfcworker_ = fastwfc.XLandWFC("samples.xml")
@@ -399,7 +400,6 @@ if __name__ == "__main__":
                 best_param = copy.copy(model_params[winner_id])
                 # 6.3. save map_decendents
                 json_save_path = "generated_maps/jsons/"
-                time_tmp = time.strftime("%Y-%m-%d-%H-%M-%S", time.localtime())
                 json_save_path = os.path.join(json_save_path, time_tmp)
                 os.makedirs(json_save_path, exist_ok=True)
                 # tag winner id via a empty folder
