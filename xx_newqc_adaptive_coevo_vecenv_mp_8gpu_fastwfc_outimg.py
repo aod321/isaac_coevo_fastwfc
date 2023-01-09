@@ -40,9 +40,9 @@ import asyncio
 from multiprocessing import Process, Queue, Pipe, Manager, Value, Array, Lock, Event, Pool
 import threading
 import argparse
-import wandb
-os.environ['WANDB_API_KEY'] = "c6e9330d491cdb9bbde9274a028400bd61749e81"
-wandb.init(project="test_3x3_map")
+# import wandb
+# os.environ['WANDB_API_KEY'] = "c6e9330d491cdb9bbde9274a028400bd61749e81"
+# wandb.init(project="test_3x3_map")
 
 argparser = argparse.ArgumentParser()
 argparser.add_argument('--wfc_size', type=int, default=3)
@@ -92,10 +92,21 @@ def train_model_on_collection(
     m_env.seed_distribution()
     m_env.reset()
 
+
+    # 5. larva evaluation
+    print("start larva evaluation on device : ", graphics_device_id)
+    print(f"evaluating {decendent_id}")
+    larva_eval = m_env.evaluate_sb3(model = model, num_episodes = 300)
+    print("larva evaluation : ", larva_eval, " on device : ", graphics_device_id)
+
     # 6. evaluate map decendent by training
     print("start training on device : ", graphics_device_id)
     model.learn(total_timesteps=timesteps)
     print("training finished on device : ", graphics_device_id)
+
+    print("start adult evaluation on device : ", graphics_device_id)
+    print(f"evaluating {decendent_id}")
+    
     # 7. adult evaluation
     adult_eval = m_env.evaluate_sb3(model = model, num_episodes = 300)
     print("adult evaluation : ", adult_eval, " on device : ", graphics_device_id)
@@ -112,6 +123,7 @@ def train_model_on_collection(
     return_queue.put((
     decendent_id,
     copy.deepcopy(model_cpu.get_parameters()),
+    copy.deepcopy(larva_eval),
     copy.deepcopy(adult_eval)
     ))
 
@@ -321,31 +333,37 @@ if __name__ == "__main__":
 
             # print output_
             for i in range(len(output_)):
-                print("G_",i,"_adult :",output_[i][2])
+                print("G_",i,"_larva :",output_[i][2])
+                print("G_",i,"_adult :",output_[i][3])
                 # update trained model parameters
-                model_params.append(output_[i][1])
+                model_params.append(copy.copy(output_[i][1]))
                 # update performance log
-                performance_records.append(output_[i][2])
+                performance_records.append([copy.deepcopy(output_[i][2]), copy.deepcopy(output_[i][3])])
 
             # 4. evaluate fitness of each decendent
             evaluation = []
             for i in range(len(performance_records)):
-                eval = performance_records[i]
-                sr_new = eval[-1]
+                larva_eval = performance_records[i][0]
+                adult_eval = performance_records[i][1]
+
+                sr_new = adult_eval[-1]
                 evaluation.append(sr_new)
 
             # 5. quality control
-            sr_threshold = 0.53
+            old_sr_threshold = 0.53
+            new_sr_threshold = 0.65
             qc_list = []
             for e in range(len(performance_records)):
-                eval = performance_records[e]
+                larva_eval = performance_records[i][0]
+                adult_eval = performance_records[i][1]
                 # 4.1 minimum success rate on old maps
                 min_sr = 100000
                 for i in range(len(eval)-1):
                     if eval[i] < min_sr:
                         min_sr = eval[i]
-                sr_new = eval[-1]
-                if min_sr > sr_threshold and sr_new >0 and sr_new <= sr_threshold:
+                sr_new = adult_eval[-1]
+                
+                if (larva_eval >0 and larva_eval <= old_sr_threshold) and adult_eval >= new_sr_threshold and min_sr >= new_sr_threshold:
                     qc_list.append(True)
                 else:
                     qc_list.append(False)
@@ -376,7 +394,7 @@ if __name__ == "__main__":
             
             # 6. update Collection and Model
             if qc_pass:
-                wandb.log({"winner_id": winner_id, "winner_score": winner_score}, step=g)
+                # wandb.log({"winner_id": winner_id, "winner_score": winner_score}, step=g)
                 print("--------------------winner id-------------------- ", winner_id)
                 print("-------------------winner score------------------ ", winner_score)
                 # 6.1. update map collection
