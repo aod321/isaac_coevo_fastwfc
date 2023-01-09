@@ -26,10 +26,19 @@ from stable_baselines3.common.callbacks import BaseCallback
 
 import torch
 
+import argparse
 
+argparser = argparse.ArgumentParser()
+argparser.add_argument('--wfc_size', type=int, default=9)
+argparser.add_argument('--enable_node_pairs', type=bool, default=False)
+args = argparser.parse_args()
+
+WFC_SIZE = args.wfc_size
 LOGDIR = "./training_logs"
+ENBALE_NODE_PAIRS = args.enable_node_pairs
 
-m_env = PCGVecEnv(headless_ = False, compute_device_id=0, graphics_device_id=0, wfc_size=6)
+# m_env = PCGVecEnv(headless_ = False, compute_device_id=0, graphics_device_id=0, wfc_size=WFC_SIZE)
+m_env = PCGVecEnv(wfc_size=WFC_SIZE, is_node_pairs=ENBALE_NODE_PAIRS, return_all=True, num_envs=1, headless_ = False, compute_device_id=0, graphics_device_id=0)
 m_env.reset()
 
 print("num_envs:",m_env.num_envs)
@@ -43,7 +52,7 @@ for i in range(m_env.num_matrix_envs):
 steps_ = 0
 reset_id = 0
 
-wfcworker_ = fastwfc.XLandWFC("samples_66.xml")
+wfcworker_ = fastwfc.XLandWFC(f"samples_{WFC_SIZE}{WFC_SIZE}.xml")
 
 manual = False
 

@@ -27,6 +27,8 @@ import fastwfc
 
 from stable_baselines3.common.env_checker import check_env
 from stable_baselines3.common.vec_env import VecEnv
+from graph_analysis import map2digraph, tiles2data
+from map2graph import get_all_pair_shortest_path
 
 N_DISCRETE_ACTIONS = 6
 N_CHANNELS = 3
@@ -36,6 +38,8 @@ WIDTH = 84
 
 class Wave(object):
     def __init__(self, wave) -> None:
+        if isinstance(wave, Wave):
+            wave = wave.wave
         self.wave = wave
         self.seed = np.array(self.wave).astype(np.int32)
         # 从1开始
@@ -79,6 +83,9 @@ class VecAdapter(VecEnvWrapper):
 
     def step_wait(self):
         return self.venv.step(self.actions)
+    
+    def render(self):
+        return self.venv.render()
 
 
 class StableBaselinesVecEnvAdapter(VecEnv):
@@ -121,7 +128,7 @@ class PCGVecEnv(StableBaselinesVecEnvAdapter):
     spec = None
 
     def __init__(self, wfc_size=9, num_envs=16, observation_space=None, action_space=None, headless_: bool = True, render_indicator: bool = True,
-                compute_device_id = 0, graphics_device_id = 0,prefab_size=2, prefab_height=2, height_scale=0.7):
+                compute_device_id = 0, graphics_device_id = 0,prefab_size=2, prefab_height=2, height_scale=0.7, is_node_pairs=False, return_all=False):
         # Define action and observation space
         if observation_space is None:
             observation_space = spaces.Box(low=0, high=255, shape=(N_CHANNELS, HEIGHT, WIDTH), dtype=np.uint8)
@@ -142,7 +149,7 @@ class PCGVecEnv(StableBaselinesVecEnvAdapter):
         '''
         simulatiom parameters
         '''
-        self.num_matrix_envs = 16
+        self.num_matrix_envs = num_envs
         self.headless = headless_
         self.spd = 10
 
@@ -271,17 +278,29 @@ class PCGVecEnv(StableBaselinesVecEnvAdapter):
         generate WFC maps
         '''
 
-        self.wfcworker_ = fastwfc.XLandWFC("samples.xml")
+        self.wfcworker_ = fastwfc.XLandWFC(f"samples_{self.wfc_size}{self.wfc_size}.xml")
         wave = self.wfcworker_.get_ids_from_wave(self.wfcworker_.build_a_open_area_wave())
         wave = Wave(wave)
-        
+
         # WFC map workspace
         self.seeds = [wave]
         self.seeds_collection = deque(maxlen=64)
         self.space = self.get_space_from_wave()
+        self.node_pairs = {}
+        self.node_pair_index = {}
+        self.return_all = return_all
+        self.is_node_pairs = is_node_pairs
+        if(self.is_node_pairs):
+            print("node pairs mode: enabled")
+        else:
+            print("node pairs mode: disabled")
 
         for i in range(0,self.num_matrix_envs-1):
             self.append_seed(wave)
+        if self.is_node_pairs: 
+            for env_id in range(self.num_matrix_envs):
+                self.node_pairs[env_id] = self.get_node_pairs(env_id=env_id, seed_=wave, return_all=self.return_all)
+                self.node_pair_index[env_id] = 0
 
         # print("seeds generated : ",type(seeds))
 
@@ -401,22 +420,34 @@ class PCGVecEnv(StableBaselinesVecEnvAdapter):
             self.sim_status.append(env_status)
 
     def placeAgentAndFood(self, env_id):
-        space = self.space.copy()
-        assert len(space) > 1, len(space)
-        self.agent_space = list(space)
         # choose a place for agent
-        random_cell = np.random.choice(self.agent_space)
-        cell_top_tile_handler = self.grid_tile_blocks[env_id][random_cell][-1].handler
+        if self.is_node_pairs and env_id in self.node_pairs.keys() and len(self.node_pairs[env_id]) > 0:
+            node_pair = self.node_pairs[env_id][self.node_pair_index[env_id]]
+            agent_cell, food_cell = node_pair
+            if self.node_pair_index[env_id] < len(self.node_pairs[env_id]) - 1:
+                self.node_pair_index[env_id] += 1
+            else:
+                self.node_pair_index[env_id] = 0
+                # print(f"1 round node pair placement finshed for env {env_id}! ")
+        else:
+            # log warning in color yellow
+            # print(f"\033[33mWarning: no node pairs left for env {env_id}, use random space\033[0m")
+            space = self.space.copy()
+            assert len(space) > 1, len(space)
+            self.agent_space = list(space)
+            # choose a place for agent
+            agent_cell = np.random.choice(self.agent_space)
+            # choose a place for food
+            self.food_space = self.agent_space.copy()
+            self.food_space.remove(agent_cell)
+            food_cell = np.random.choice(list(self.food_space))
+        cell_top_tile_handler = self.grid_tile_blocks[env_id][agent_cell][-1].handler
         # reset agent's pose
         cell_body_states = self.gym.get_actor_rigid_body_states(self.envs[env_id], cell_top_tile_handler, gymapi.STATE_ALL)
         actor_cell_pose = gymapi.Transform()
         actor_cell_pose.p = gymapi.Vec3(cell_body_states["pose"]["p"][0][0], cell_body_states["pose"]["p"][0][1], cell_body_states["pose"]["p"][0][2] + self.prefab_height * 1.5)
         actor_cell_pose.r = gymapi.Quat(0, 1, 0, 1)
-        # choose a place for food
-        self.food_space = self.agent_space.copy()
-        self.food_space.remove(random_cell)
-        random_cell = np.random.choice(list(self.food_space))
-        cell_top_tile_handler = self.grid_tile_blocks[env_id][random_cell][-1].handler
+        cell_top_tile_handler = self.grid_tile_blocks[env_id][food_cell][-1].handler
         cell_body_states = self.gym.get_actor_rigid_body_states(self.envs[env_id], cell_top_tile_handler, gymapi.STATE_ALL)
         food_cell_pose = gymapi.Transform()
         food_cell_pose.p = gymapi.Vec3(cell_body_states["pose"]["p"][0][0], cell_body_states["pose"]["p"][0][1], cell_body_states["pose"]["p"][0][2] + self.prefab_height * 1.5)
@@ -559,6 +590,7 @@ class PCGVecEnv(StableBaselinesVecEnvAdapter):
                 break
         if landscape_new:
             self.seeds_collection.append(copy.deepcopy(seed))
+
 
     def in_collection(self,seed):
         for s in self.seeds_collection:
@@ -834,6 +866,40 @@ class PCGVecEnv(StableBaselinesVecEnvAdapter):
                 else:
                     raise Exception("The tile Data is out of the range: 0 to 21")
                 cell_index += 1
+    
+    def get_node_pairs(self, env_id, seed_=None, return_all=False):
+        if seed_ is not None:
+            if not isinstance(seed_, Wave):
+                seed_ = Wave(seed_)
+        else:
+            seed_ = self.seeds[env_id]
+        wfc_size = self.wfc_size
+        DG = map2digraph(tiles2data(seed_.wave, size=wfc_size*wfc_size), size=wfc_size*wfc_size)
+        all_shortest_path,all_shortest_path_dict = get_all_pair_shortest_path(DG, return_dict=True)
+        # All node pairs with available path
+        # 计算并列举出全部有路径节点对
+        all_have_path_pair = []
+        for i in DG.nodes:
+            for j in DG.nodes:
+                if i!=j and j in all_shortest_path_dict[i].keys():
+                    all_have_path_pair.append([i,j])
+        # All longest shortest path node pairs
+        max_shortest_path_length = 0
+        for i,shortest_path in enumerate(all_shortest_path):
+            if len(shortest_path) > max_shortest_path_length:
+                max_shortest_path_length = len(shortest_path)
+        # collect all path with max length
+        all_max_shortest_path = []
+        for i,shortest_path in enumerate(all_shortest_path):
+            if len(shortest_path) == max_shortest_path_length:
+                all_max_shortest_path.append(shortest_path)
+        max_shortest_node_pairs = []
+        for path in all_max_shortest_path:
+            max_shortest_node_pairs.append([path[0], path[-1]])
+        if return_all:
+            return all_have_path_pair
+        else:
+            return max_shortest_node_pairs
 
     # set wfc landscape interface
     def set_landscape(self, env_id, seed_, update_collection = True):
@@ -841,7 +907,9 @@ class PCGVecEnv(StableBaselinesVecEnvAdapter):
             seed_ = Wave(seed_)
         # set seed
         self.seeds[env_id] = copy.deepcopy(seed_)
-
+        if self.is_node_pairs:
+            self.node_pairs[env_id] = self.get_node_pairs(env_id, seed_=seed_, return_all=self.return_all)
+            self.node_pair_index[env_id] = 0
         # update collection of seeds
         if update_collection:
             landscape_new = True
@@ -857,6 +925,8 @@ class PCGVecEnv(StableBaselinesVecEnvAdapter):
         self.__resetActors(env_id)
         self.__gridRender(seed, env_id)
         self.placeAgentAndFood(env_id)
+        if self.is_node_pairs:
+            self.node_pair_index[env_id] = 0
 
     def _apply_action(self, env_id, action):
 

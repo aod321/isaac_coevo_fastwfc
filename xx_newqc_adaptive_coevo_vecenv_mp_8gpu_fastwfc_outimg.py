@@ -39,14 +39,28 @@ import asyncio
 
 from multiprocessing import Process, Queue, Pipe, Manager, Value, Array, Lock, Event, Pool
 import threading
+import argparse
+import wandb
+os.environ['WANDB_API_KEY'] = "c6e9330d491cdb9bbde9274a028400bd61749e81"
+wandb.init(project="test_3x3_map")
 
-WFC_SIZE = 6
+argparser = argparse.ArgumentParser()
+argparser.add_argument('--wfc_size', type=int, default=3)
+argparser.add_argument('--num_steps', type=int, default=500000)
+argparser.add_argument('--mutate_weight', type=int, default=162)
+argparser.add_argument('--enable_node_pairs', type=bool, default=False)
+args = argparser.parse_args()
 
+WFC_SIZE = args.wfc_size
+TIME_STEP = args.num_steps
+MUTATE_WEIGHT = args.mutate_weight
+ENBALE_NODE_PAIRS = args.enable_node_pairs
+time_tmp = time.strftime("%Y-%m-%d-%H-%M-%S", time.localtime())
 
 
 def in_collection(seed,seeds_collection):
     for s in seeds_collection:
-        if s == seed:
+        if s.wave == seed.wave:
             return True
     return False
 
@@ -64,7 +78,7 @@ def train_model_on_collection(
 
     # 1. create environment
     os.environ['CUDA_VISIBLE_DEVICES']='0,1,2,3,4,5,6,7'
-    m_env = PCGVecEnv(wfc_size=WFC_SIZE, headless_ = True, compute_device_id = compute_device_id, graphics_device_id = graphics_device_id)
+    m_env = PCGVecEnv(wfc_size=WFC_SIZE, headless_ = True, is_node_pairs=ENBALE_NODE_PAIRS,compute_device_id = compute_device_id, graphics_device_id = graphics_device_id)
     m_env.reset()
 
     # 2. create model
@@ -78,19 +92,10 @@ def train_model_on_collection(
     m_env.seed_distribution()
     m_env.reset()
 
-    # 5. larva evaluation
-    print("start larva evaluation on device : ", graphics_device_id)
-    print(f"evaluating {decendent_id}")
-    larva_eval = m_env.evaluate_sb3(model = model, num_episodes = 300)
-    print("larva evaluation : ", larva_eval, " on device : ", graphics_device_id)
-
     # 6. evaluate map decendent by training
     print("start training on device : ", graphics_device_id)
     model.learn(total_timesteps=timesteps)
     print("training finished on device : ", graphics_device_id)
-
-    print("start adult evaluation on device : ", graphics_device_id)
-    print(f"evaluating {decendent_id}")
     # 7. adult evaluation
     adult_eval = m_env.evaluate_sb3(model = model, num_episodes = 300)
     print("adult evaluation : ", adult_eval, " on device : ", graphics_device_id)
@@ -107,7 +112,6 @@ def train_model_on_collection(
     return_queue.put((
     decendent_id,
     copy.deepcopy(model_cpu.get_parameters()),
-    copy.deepcopy(larva_eval),
     copy.deepcopy(adult_eval)
     ))
 
@@ -116,9 +120,9 @@ def train_model_on_collection(
 def save_model_proc(model_parameters, generation_id):
 
     os.environ['CUDA_VISIBLE_DEVICES']='0,1,2,3,4,5,6,7'
-    LOGDIR = "./training_logs"
+    LOGDIR = f"./training_logs/{WFC_SIZE}_nodepair={ENBALE_NODE_PAIRS}_fastwfc_coevo_{time_tmp}"
 
-    m_env = PCGVecEnv(wfc_size=WFC_SIZE, headless_ = True)
+    m_env = PCGVecEnv(wfc_size=WFC_SIZE, is_node_pairs=ENBALE_NODE_PAIRS,headless_ = True)
     m_env.reset()
     # save model to LOGDIR
     model = PPO('CnnPolicy', env=m_env, batch_size = 1024, device = 'cuda:0')
@@ -139,10 +143,10 @@ def generate_boost_model(return_queue = None):
 
     os.environ['CUDA_VISIBLE_DEVICES']='0,1,2,3,4,5,6,7'
 
-    LOGDIR = "./training_logs"
-    timesteps = 1500000
+    LOGDIR = f"./training_logs/{WFC_SIZE}_nodepair={ENBALE_NODE_PAIRS}_fastwfc_coevo_{time_tmp}"
+    timesteps = TIME_STEP
 
-    m_env = PCGVecEnv(wfc_size=WFC_SIZE, headless_ = True)
+    m_env = PCGVecEnv(wfc_size=WFC_SIZE, headless_ = True, is_node_pairs=ENBALE_NODE_PAIRS)
     m_env.reset()
 
     # # check if LOGDIR+"/boost_model" exists
@@ -153,10 +157,10 @@ def generate_boost_model(return_queue = None):
     #     model = PPO.load(LOGDIR+"/boost_model.zip", device = 'cpu:0')
     # else:
     model = PPO('CnnPolicy', env=m_env, batch_size = 1024, device = 'cuda:0')
-    # evaluate larva
-    print("generate_boost: Evaluating larva model")
-    larva_eval = m_env.evaluate_sb3(model = model, num_episodes = 300)
-    print("Larva eval: ", larva_eval)
+    # # evaluate larva
+    # print("generate_boost: Evaluating larva model")
+    # larva_eval = m_env.evaluate_sb3(model = model, num_episodes = 300)
+    # print("Larva eval: ", larva_eval)
 
     print("Training boost model")
     # boost training
@@ -183,12 +187,11 @@ def generate_boost_model(return_queue = None):
 if __name__ == "__main__":
 
 
-    LOGDIR = "./training_logs"
-    timesteps = 1500000
-    time_tmp = time.strftime("%Y-%m-%d-%H-%M-%S", time.localtime())
+    LOGDIR = f"./training_logs/{WFC_SIZE}_nodepair={ENBALE_NODE_PAIRS}_fastwfc_coevo_{time_tmp}"
+    timesteps = TIME_STEP
 
     # load flat landscape
-    wfcworker_ = fastwfc.XLandWFC("samples_66.xml")
+    wfcworker_ = fastwfc.XLandWFC(f"samples_{WFC_SIZE}{WFC_SIZE}.xml")
     wave = wfcworker_.get_ids_from_wave(wfcworker_.build_a_open_area_wave())
     seed = Wave(wave)
     seeds_collection = deque(maxlen=64)         # update the seeds collection (winners) in outter loop
@@ -249,9 +252,9 @@ if __name__ == "__main__":
             # generate new seeds
             for i in range(num_decendents):
                 base_wave = seeds_collection[-1].wave
-                new_decendent, _ = wfcworker_.mutate(base_wave=wfcworker_.wave_from_id(base_wave), new_weight=162, iter_count=1, out_img=False)
+                new_decendent, _ = wfcworker_.mutate(base_wave=wfcworker_.wave_from_id(base_wave), new_weight=MUTATE_WEIGHT, iter_count=1, out_img=False)
                 while in_collection(seed = Wave(new_decendent), seeds_collection = seeds_collection):
-                    new_decendent, _ = wfcworker_.mutate(base_wave=wfcworker_.wave_from_id(base_wave), new_weight=162, iter_count=1, out_img=False)
+                    new_decendent, _ = wfcworker_.mutate(base_wave=wfcworker_.wave_from_id(base_wave), new_weight=MUTATE_WEIGHT, iter_count=1, out_img=False)
                     new_decendent = Wave(new_decendent)
                 new_decendent = Wave(new_decendent)
                 # new seed is generated
@@ -318,50 +321,31 @@ if __name__ == "__main__":
 
             # print output_
             for i in range(len(output_)):
-                print("G_",i,"_larva :",output_[i][2])
-                print("G_",i,"_adult :",output_[i][3])
-
+                print("G_",i,"_adult :",output_[i][2])
                 # update trained model parameters
-                model_params.append(copy.copy(output_[i][1]))
+                model_params.append(output_[i][1])
                 # update performance log
-                performance_records.append([copy.deepcopy(output_[i][2]), copy.deepcopy(output_[i][3])])
+                performance_records.append(output_[i][2])
 
             # 4. evaluate fitness of each decendent
             evaluation = []
             for i in range(len(performance_records)):
-
-                larva_eval = performance_records[i][0]
-                adult_eval = performance_records[i][1]
-
-                # 3.1. maximum performance drop on old maps
-                sr_drop_max = -1000
-                for j in range(len(larva_eval)-1):
-                    sr_drop = larva_eval[j] - adult_eval[j]
-                    if sr_drop > sr_drop_max:
-                        sr_drop_max = sr_drop
-
-                # 3.2. performance gain on new maps
-                sr_gain = adult_eval[-1] - larva_eval[-1]
-
-                # 3.3. success rate on new maps
-                sr_new = adult_eval[-1]
-
-                evaluation.append(copy.deepcopy([sr_drop_max, sr_gain, sr_new]))
+                eval = performance_records[i]
+                sr_new = eval[-1]
+                evaluation.append(sr_new)
 
             # 5. quality control
-            old_sr_threshold = 0.53
-            new_sr_threshold = 0.65
+            sr_threshold = 0.53
             qc_list = []
             for e in range(len(performance_records)):
-                _adult_eval = performance_records[e][1]
+                eval = performance_records[e]
                 # 4.1 minimum success rate on old maps
                 min_sr = 100000
-                for i in range(len(_adult_eval)-1):
-                    if _adult_eval[i] < min_sr:
-                        min_sr = _adult_eval[i]
-                # 4.2 success rate on new maps
-                sr_new = _adult_eval[-1]
-                if min_sr >= old_sr_threshold and sr_new >= new_sr_threshold:
+                for i in range(len(eval)-1):
+                    if eval[i] < min_sr:
+                        min_sr = eval[i]
+                sr_new = eval[-1]
+                if min_sr > sr_threshold and sr_new >0 and sr_new <= sr_threshold:
                     qc_list.append(True)
                 else:
                     qc_list.append(False)
@@ -373,9 +357,9 @@ if __name__ == "__main__":
                     break
 
             if qc_pass:
-                print("Quality Control passed : ", min_sr, sr_new)
+                print("Quality Control passed : ", eval)
             else:
-                print("Quality Control failed : ", min_sr, sr_new)
+                print("Quality Control failed : ", eval)
                 print("run inner loop again......")
 
             # select best candidate as winner
@@ -384,35 +368,33 @@ if __name__ == "__main__":
             for i in range(len(evaluation)):
                 # score = sqrt((evaluation[i][0]+1)**2 + (evaluation[i][1]-1)**2 + (evaluation[i][2]-1)**2)
                 # score = abs(evaluation[i][0]+1) + abs(evaluation[i][1]-1) + abs(evaluation[i][2]-1)
-                score = abs(evaluation[i][1]-1)
+                score = abs(evaluation[i]-1)
                 print("seed : ", i, " score : ", score)
                 if qc_list[i] and score < winner_score:
                     winner_score = score
                     winner_id = i
-
             
             # 6. update Collection and Model
             if qc_pass:
-
+                wandb.log({"winner_id": winner_id, "winner_score": winner_score}, step=g)
                 print("--------------------winner id-------------------- ", winner_id)
                 print("-------------------winner score------------------ ", winner_score)
-
                 # 6.1. update map collection
                 seeds_collection.append(copy.deepcopy(map_decendents[winner_id]))
                 # 6.2. update model
                 best_param = copy.copy(model_params[winner_id])
                 # 6.3. save map_decendents
-                save_path = os.path.join("generated_maps", f"{time_tmp}")
+                save_path = os.path.join(f"generated_maps/{WFC_SIZE}{WFC_SIZE}_enable_node_pairs={ENBALE_NODE_PAIRS}", f"{time_tmp}")
                 img_save_path = os.path.join(save_path, "imgs")
                 json_save_path = os.path.join(save_path, "jsons")
                 os.makedirs(json_save_path, exist_ok=True)
                 os.makedirs(img_save_path, exist_ok=True)
-                # tag winner id via a empty folder
-                os.makedirs(os.path.join(save_path, f"gen_{g}_winner_{winner_id}"), exist_ok=True)
+                # os.makedirs(os.path.join(save_path, "winners", f"gen_{g}_winner_{winner_id}"), exist_ok=True)
+                os.makedirs(os.path.join(save_path, "winners"), exist_ok=True)
                 # save 3D map image 
                 unity_path = "./1228_build_linux_fastwfc_map/1228_build_linux_fastwfc_map.x86_64"
                 try:
-                    unity3d_env = WFCUnity3DEnv(file_name=unity_path)
+                    unity3d_env = WFCUnity3DEnv(file_name=unity_path, wfc_size=WFC_SIZE)
                     for m in range(len(map_decendents)):
                         file_name = "gen_"+ str(g) + "_dec_" + str(m) + ".json"
                         file_name = os.path.join(json_save_path, file_name)
@@ -423,6 +405,11 @@ if __name__ == "__main__":
                         img_bgr = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
                         img_save_file_name = os.path.join(img_save_path, f"gen_{g}_dec_{m}.png")
                         cv2.imwrite(img_save_file_name, img_bgr)
+                        try:
+                            if m == winner_id:
+                                cv2.imwrite(os.path.join(save_path, "winners", f"gen_{g}_winner_{winner_id}.png"), img_bgr)
+                        except:
+                            pass
                 finally:
                     gamename = os.path.basename(unity_path)
                     os.system(f"nohup pidof {gamename} | xargs kill -9> /dev/null 2>&1 & ")

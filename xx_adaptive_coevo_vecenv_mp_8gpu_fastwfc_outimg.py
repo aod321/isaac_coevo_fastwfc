@@ -39,8 +39,21 @@ import asyncio
 
 from multiprocessing import Process, Queue, Pipe, Manager, Value, Array, Lock, Event, Pool
 import threading
+import argparse
 
+argparser = argparse.ArgumentParser()
+argparser.add_argument('--wfc_size', type=int, default=9)
+argparser.add_argument('--num_steps', type=int, default=1500000)
+argparser.add_argument('--mutate_weight', type=int, default=162)
+argparser.add_argument('--enable_node_pairs', type=bool, default=False)
+args = argparser.parse_args()
+
+WFC_SIZE = args.wfc_size
+TIME_STEP = args.num_steps
+MUTATE_WEIGHT = args.mutate_weight
+ENBALE_NODE_PAIRS = args.enable_node_pairs
 time_tmp = time.strftime("%Y-%m-%d-%H-%M-%S", time.localtime())
+
 
 def in_collection(seed,seeds_collection):
     for s in seeds_collection:
@@ -62,7 +75,7 @@ def train_model_on_collection(
 
     # 1. create environment
     os.environ['CUDA_VISIBLE_DEVICES']='0,1,2,3,4,5,6,7'
-    m_env = PCGVecEnv(headless_ = True, compute_device_id = compute_device_id, graphics_device_id = graphics_device_id)
+    m_env = PCGVecEnv(wfc_size=WFC_SIZE, headless_ = True, is_node_pairs=ENBALE_NODE_PAIRS,compute_device_id = compute_device_id, graphics_device_id = graphics_device_id)
     m_env.reset()
 
     # 2. create model
@@ -114,9 +127,9 @@ def train_model_on_collection(
 def save_model_proc(model_parameters, generation_id):
 
     os.environ['CUDA_VISIBLE_DEVICES']='0,1,2,3,4,5,6,7'
-    LOGDIR = f"./training_logs/fastwfc_coevo_{time_tmp}"
+    LOGDIR = f"./training_logs/{WFC_SIZE}_nodepair={ENBALE_NODE_PAIRS}_fastwfc_coevo_{time_tmp}"
 
-    m_env = PCGVecEnv(headless_ = True)
+    m_env = PCGVecEnv(wfc_size=WFC_SIZE, is_node_pairs=ENBALE_NODE_PAIRS,headless_ = True)
     m_env.reset()
     # save model to LOGDIR
     model = PPO('CnnPolicy', env=m_env, batch_size = 1024, device = 'cuda:0')
@@ -137,10 +150,10 @@ def generate_boost_model(return_queue = None):
 
     os.environ['CUDA_VISIBLE_DEVICES']='0,1,2,3,4,5,6,7'
 
-    LOGDIR = f"./training_logs/fastwfc_coevo_{time_tmp}"
-    timesteps = 1500000
+    LOGDIR = f"./training_logs/{WFC_SIZE}_nodepair={ENBALE_NODE_PAIRS}_fastwfc_coevo_{time_tmp}"
+    timesteps = TIME_STEP
 
-    m_env = PCGVecEnv(headless_ = True)
+    m_env = PCGVecEnv(wfc_size=WFC_SIZE, headless_ = True, is_node_pairs=ENBALE_NODE_PAIRS)
     m_env.reset()
 
     # # check if LOGDIR+"/boost_model" exists
@@ -181,11 +194,11 @@ def generate_boost_model(return_queue = None):
 if __name__ == "__main__":
 
 
-    LOGDIR = f"./training_logs/fastwfc_coevo_{time_tmp}"
-    timesteps = 1500000
+    LOGDIR = f"./training_logs/{WFC_SIZE}_nodepair={ENBALE_NODE_PAIRS}_fastwfc_coevo_{time_tmp}"
+    timesteps = TIME_STEP
 
     # load flat landscape
-    wfcworker_ = fastwfc.XLandWFC("samples.xml")
+    wfcworker_ = fastwfc.XLandWFC(f"samples_{WFC_SIZE}{WFC_SIZE}.xml")
     wave = wfcworker_.get_ids_from_wave(wfcworker_.build_a_open_area_wave())
     seed = Wave(wave)
     seeds_collection = deque(maxlen=64)         # update the seeds collection (winners) in outter loop
@@ -246,9 +259,9 @@ if __name__ == "__main__":
             # generate new seeds
             for i in range(num_decendents):
                 base_wave = seeds_collection[-1].wave
-                new_decendent, _ = wfcworker_.mutate(base_wave=wfcworker_.wave_from_id(base_wave), new_weight=162, iter_count=1, out_img=False)
+                new_decendent, _ = wfcworker_.mutate(base_wave=wfcworker_.wave_from_id(base_wave), new_weight=MUTATE_WEIGHT, iter_count=1, out_img=False)
                 while in_collection(seed = Wave(new_decendent), seeds_collection = seeds_collection):
-                    new_decendent, _ = wfcworker_.mutate(base_wave=wfcworker_.wave_from_id(base_wave), new_weight=162, iter_count=1, out_img=False)
+                    new_decendent, _ = wfcworker_.mutate(base_wave=wfcworker_.wave_from_id(base_wave), new_weight=MUTATE_WEIGHT, iter_count=1, out_img=False)
                     new_decendent = Wave(new_decendent)
                 new_decendent = Wave(new_decendent)
                 # new seed is generated
@@ -399,15 +412,35 @@ if __name__ == "__main__":
                 # 6.2. update model
                 best_param = copy.copy(model_params[winner_id])
                 # 6.3. save map_decendents
-                json_save_path = "generated_maps/jsons/"
-                json_save_path = os.path.join(json_save_path, time_tmp)
+                save_path = os.path.join(f"generated_maps/{WFC_SIZE}{WFC_SIZE}_enable_node_pairs={ENBALE_NODE_PAIRS}", f"{time_tmp}")
+                img_save_path = os.path.join(save_path, "imgs")
+                json_save_path = os.path.join(save_path, "jsons")
                 os.makedirs(json_save_path, exist_ok=True)
-                # tag winner id via a empty folder
-                os.makedirs(f"generated_maps/gen_{g}_winner_{winner_id}", exist_ok=True)
-                for m in range(len(map_decendents)):
-                    file_name = "gen_"+ str(g) + "_dec_" + str(m) + ".json"
-                    file_name = os.path.join(json_save_path, file_name)
-                    tileid_to_json(map_decendents[m].wave, save_path=file_name)
+                os.makedirs(img_save_path, exist_ok=True)
+                # os.makedirs(os.path.join(save_path, "winners", f"gen_{g}_winner_{winner_id}"), exist_ok=True)
+                os.makedirs(os.path.join(save_path, "winners"), exist_ok=True)
+                # save 3D map image 
+                unity_path = "./1228_build_linux_fastwfc_map/1228_build_linux_fastwfc_map.x86_64"
+                try:
+                    unity3d_env = WFCUnity3DEnv(file_name=unity_path, wfc_size=WFC_SIZE)
+                    for m in range(len(map_decendents)):
+                        file_name = "gen_"+ str(g) + "_dec_" + str(m) + ".json"
+                        file_name = os.path.join(json_save_path, file_name)
+                        tileid_to_json(map_decendents[m].wave, save_path=file_name)
+                        print(f"Redering map {m} in Unity, and saving ...")
+                        unity3d_env.set_wave(map_decendents[m].wave)
+                        img = unity3d_env.render_in_unity()
+                        img_bgr = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
+                        img_save_file_name = os.path.join(img_save_path, f"gen_{g}_dec_{m}.png")
+                        cv2.imwrite(img_save_file_name, img_bgr)
+                        try:
+                            if m == winner_id:
+                                cv2.imwrite(os.path.join(save_path, "winners", f"gen_{g}_winner_{winner_id}.png"), img_bgr)
+                        except:
+                            pass
+                finally:
+                    gamename = os.path.basename(unity_path)
+                    os.system(f"nohup pidof {gamename} | xargs kill -9> /dev/null 2>&1 & ")
                 # 6.4. save best model
                 print("saving best model")
                 save_model(best_param, g)

@@ -41,9 +41,11 @@ from multiprocessing import Process, Queue, Pipe, Manager, Value, Array, Lock, E
 import threading
 
 
+time_tmp = time.strftime("%Y-%m-%d-%H-%M-%S", time.localtime())
+
 def in_collection(seed,seeds_collection):
     for s in seeds_collection:
-        if s == seed:
+        if s.wave == seed.wave:
             return True
     return False
 
@@ -113,7 +115,7 @@ def train_model_on_collection(
 def save_model_proc(model_parameters, generation_id):
 
     os.environ['CUDA_VISIBLE_DEVICES']='0,1,2,3,4,5,6,7'
-    LOGDIR = "./training_logs"
+    LOGDIR = f"./training_logs/fastwfc_coevo_{time_tmp}"
 
     m_env = PCGVecEnv(headless_ = True)
     m_env.reset()
@@ -136,7 +138,8 @@ def generate_boost_model(return_queue = None):
 
     os.environ['CUDA_VISIBLE_DEVICES']='0,1,2,3,4,5,6,7'
 
-    LOGDIR = "./training_logs"
+    LOGDIR = f"./training_logs/fastwfc_coevo_{time_tmp}"
+    
     timesteps = 1500000
 
     m_env = PCGVecEnv(headless_ = True)
@@ -180,9 +183,8 @@ def generate_boost_model(return_queue = None):
 if __name__ == "__main__":
 
 
-    LOGDIR = "./training_logs"
+    LOGDIR = f"./training_logs/fastwfc_coevo_{time_tmp}"
     timesteps = 1500000
-    time_tmp = time.strftime("%Y-%m-%d-%H-%M-%S", time.localtime())
 
     # load flat landscape
     wfcworker_ = fastwfc.XLandWFC("samples.xml")
