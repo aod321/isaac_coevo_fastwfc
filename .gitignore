@@ -167,3 +167,8 @@ wandb/
 eval_3x3map.py
 ai_play_in_map.ipynb
 data_draw.py
+winner_lists/
+wfc_models/
+evaluate_models*.py
+generate_winners.py
+test.py

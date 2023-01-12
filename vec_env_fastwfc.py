@@ -29,6 +29,8 @@ from stable_baselines3.common.env_checker import check_env
 from stable_baselines3.common.vec_env import VecEnv
 from graph_analysis import map2digraph, tiles2data
 from map2graph import get_all_pair_shortest_path
+import json
+
 
 N_DISCRETE_ACTIONS = 6
 N_CHANNELS = 3
@@ -878,11 +880,15 @@ class PCGVecEnv(StableBaselinesVecEnvAdapter):
         all_shortest_path,all_shortest_path_dict = get_all_pair_shortest_path(DG, return_dict=True)
         # All node pairs with available path
         # 计算并列举出全部有路径节点对
-        all_have_path_pair = []
+        all_node_pair_length = {}
         for i in DG.nodes:
             for j in DG.nodes:
                 if i!=j and j in all_shortest_path_dict[i].keys():
-                    all_have_path_pair.append([i,j])
+                    # all_have_path_pair.append([i,j])
+                    all_node_pair_length[f'[{i},{j}]'] = len(all_shortest_path_dict[i][j])
+        # sort all_node_pair_length as values
+        sorted_all_node_pair_length = {k: v for k, v in sorted(all_node_pair_length.items(), key=lambda item: item[1])}
+        all_have_path_pair = [json.loads(i) for i in sorted_all_node_pair_length.keys()]
         # All longest shortest path node pairs
         max_shortest_path_length = 0
         for i,shortest_path in enumerate(all_shortest_path):
@@ -899,7 +905,7 @@ class PCGVecEnv(StableBaselinesVecEnvAdapter):
         if return_all:
             return all_have_path_pair
         else:
-            return max_shortest_node_pairs
+            return np.array(max_shortest_node_pairs)
 
     # set wfc landscape interface
     def set_landscape(self, env_id, seed_, update_collection = True):

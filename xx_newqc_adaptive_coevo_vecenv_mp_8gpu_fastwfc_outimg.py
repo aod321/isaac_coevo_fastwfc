@@ -45,12 +45,14 @@ import argparse
 # wandb.init(project="test_3x3_map")
 
 argparser = argparse.ArgumentParser()
+argparser.add_argument('--generations', type=int, default=50)
 argparser.add_argument('--wfc_size', type=int, default=3)
 argparser.add_argument('--num_steps', type=int, default=500000)
 argparser.add_argument('--mutate_weight', type=int, default=162)
 argparser.add_argument('--enable_node_pairs', type=bool, default=False)
 args = argparser.parse_args()
 
+GENRATIONS = args.generations
 WFC_SIZE = args.wfc_size
 TIME_STEP = args.num_steps
 MUTATE_WEIGHT = args.mutate_weight
@@ -206,6 +208,7 @@ if __name__ == "__main__":
     wfcworker_ = fastwfc.XLandWFC(f"samples_{WFC_SIZE}{WFC_SIZE}.xml")
     wave = wfcworker_.get_ids_from_wave(wfcworker_.build_a_open_area_wave())
     seed = Wave(wave)
+    
     seeds_collection = deque(maxlen=64)         # update the seeds collection (winners) in outter loop
     model_collection = deque(maxlen=64)         # update the model collection in outter loop
     seeds_collection.append(seed)
@@ -241,7 +244,7 @@ if __name__ == "__main__":
     # timesteps = 2000000
 
     # 6. outter loop
-    for g in range(50):
+    for g in range(GENRATIONS):
 
         qc_pass = False
 
@@ -354,16 +357,16 @@ if __name__ == "__main__":
             new_sr_threshold = 0.65
             qc_list = []
             for e in range(len(performance_records)):
-                larva_eval = performance_records[i][0]
-                adult_eval = performance_records[i][1]
+                _larva_eval = performance_records[i][0]
+                _adult_eval = performance_records[i][1]
                 # 4.1 minimum success rate on old maps
                 min_sr = 100000
-                for i in range(len(eval)-1):
-                    if eval[i] < min_sr:
-                        min_sr = eval[i]
-                sr_new = adult_eval[-1]
+                for i in range(len(_adult_eval)-1):
+                    if _adult_eval[i] < min_sr:
+                        min_sr = _adult_eval[i]
+                sr_new = _adult_eval[-1]
                 
-                if (larva_eval >0 and larva_eval <= old_sr_threshold) and adult_eval >= new_sr_threshold and min_sr >= new_sr_threshold:
+                if (_larva_eval[-1] >0 and _larva_eval[-1] <= old_sr_threshold) and sr_new >= new_sr_threshold and min_sr >= new_sr_threshold:
                     qc_list.append(True)
                 else:
                     qc_list.append(False)
@@ -375,9 +378,9 @@ if __name__ == "__main__":
                     break
 
             if qc_pass:
-                print("Quality Control passed : ", eval)
+                print("Quality Control passed : ", min_sr, sr_new)
             else:
-                print("Quality Control failed : ", eval)
+                print("Quality Control failed : ", min_sr, sr_new)
                 print("run inner loop again......")
 
             # select best candidate as winner
