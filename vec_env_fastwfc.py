@@ -130,7 +130,7 @@ class PCGVecEnv(StableBaselinesVecEnvAdapter):
     spec = None
 
     def __init__(self, wfc_size=9, num_envs=16, observation_space=None, action_space=None, headless_: bool = True, render_indicator: bool = True,
-                compute_device_id = 0, graphics_device_id = 0,prefab_size=2, prefab_height=2, height_scale=0.7, is_node_pairs=False, return_all=False):
+                compute_device_id = 0, graphics_device_id = 0,prefab_size=2, prefab_height=2, height_scale=0.7, is_node_pairs=False, return_all=False, cwd=None):
         # Define action and observation space
         if observation_space is None:
             observation_space = spaces.Box(low=0, high=255, shape=(N_CHANNELS, HEIGHT, WIDTH), dtype=np.uint8)

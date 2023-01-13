@@ -172,3 +172,5 @@ wfc_models/
 evaluate_models*.py
 generate_winners.py
 test.py
+*.csv
+training_logs.monitor.csv
